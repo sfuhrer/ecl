@@ -366,18 +366,18 @@ void EstimatorInterface::setOpticalFlowData(uint64_t time_usec, flow_message *fl
 		// of min arrival interval because too much data is being lost
 		float delta_time = 1e-6f * (float)flow->dt;
 		float delta_time_min = 5e-7f * (float)_min_obs_interval_us;
-		bool delta_time_good = delta_time >= delta_time_min;
+		float delta_time_max = 0.1f;
 
+		// protect against overflow caused by very small or large delta_times
+		bool delta_time_good = (delta_time >= delta_time_min) && (delta_time <= delta_time_max);
 		if (!delta_time_good) {
-			// protect against overflow casued by division with very small delta_time
-			delta_time = delta_time_min;
+			delta_time = math::constrain(delta_time, delta_time_min, delta_time_max);
 		}
-
 
 		// check magnitude is within sensor limits
 		// use this to prevent use of a saturated flow sensor when there are other aiding sources available
 		float flow_rate_magnitude;
-		bool flow_magnitude_good = true;
+		bool flow_magnitude_good = false;
 		if (delta_time_good) {
 			flow_rate_magnitude = flow->flowdata.norm() / delta_time;
 			flow_magnitude_good = (flow_rate_magnitude <= _flow_max_rate);
@@ -388,9 +388,10 @@ void EstimatorInterface::setOpticalFlowData(uint64_t time_usec, flow_message *fl
 		// check quality metric
 		bool flow_quality_good = (flow->quality >= _params.flow_qual_min);
 
+		bool use_flow_data_to_navigate = delta_time_good && flow_quality_good && (flow_magnitude_good || relying_on_flow);
+
 		// Check data validity and write to buffers
 		// Invalid flow data is allowed when on ground and is handled as a special case in controlOpticalFlowFusion()
-		bool use_flow_data_to_navigate = delta_time_good && flow_quality_good && (flow_magnitude_good || relying_on_flow);
 		if (use_flow_data_to_navigate || (!_control_status.flags.in_air && relying_on_flow)) {
 			flowSample optflow_sample_new;
 			// calculate the system time-stamp for the trailing edge of the flow data integration period
